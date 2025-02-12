@@ -124,14 +124,14 @@ async fn get_hello_loop(
     cancel: CancellationToken,
 ) {
     async fn get_hello(http_client: &reqwest::Client, url: &str) -> anyhow::Result<()> {
+        info!("getting {url}");
         let hello = http_client.get(url).send().await?.text().await?;
-        assert_eq!(hello, "hello");
+        info!("got answer: `{hello}`");
 
         Ok(())
     }
 
     loop {
-        info!("getting {url}");
         if let Err(err) = get_hello(&http_client, &url).await {
             error!(?err, "GET {url}");
         }

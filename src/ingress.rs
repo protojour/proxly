@@ -49,7 +49,7 @@ async fn forward_tcp(
 ) -> anyhow::Result<()> {
     info!(?remote_addr, "accepted");
 
-    let dst_addr = if let Some(addr) = state.ingress_fixed_dst_addr {
+    let mut dst_addr = if let Some(addr) = state.ingress_fixed_dst_addr {
         addr
     } else {
         // FIXME: this is probably not the way to detect V6 in this context
@@ -61,6 +61,11 @@ async fn forward_tcp(
 
         addr
     };
+
+    // port rerouting
+    if dst_addr.port() == 443 {
+        dst_addr.set_port(80);
+    }
 
     let mut dst_socket = TcpSocket::new_v4()?
         .connect(dst_addr)

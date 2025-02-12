@@ -12,7 +12,7 @@ pub async fn authly_tls_config(
 ) -> anyhow::Result<Arc<ArcSwap<ServerConfig>>> {
     let mut cfg_stream = authly_client
         // FIXME: figure out proper alternative names? hostname + ServiceId?
-        .rustls_server_configurer("service", vec!["proxied".to_string()])
+        .rustls_server_configurer("service", vec!["ts-proxied".to_string()])
         .await?;
 
     let server_config = cfg_stream

@@ -37,10 +37,12 @@ RUN cargo build -p proxly ${CARGO_FLAGS} --target x86_64-unknown-linux-musl
 
 FROM builder_${TARGETARCH} AS builder
 ARG TARGETARCH
+RUN useradd proxly --uid 7855
 
 
 FROM scratch AS dist_base
 COPY --from=builder /etc/passwd /etc/passwd
+USER proxly
 COPY LICENSE /
 
 FROM dist_base AS dist_amd64

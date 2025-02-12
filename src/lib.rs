@@ -74,7 +74,3 @@ pub async fn run_proxy_debug() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-pub async fn provision() -> anyhow::Result<()> {
-    Ok(())
-}

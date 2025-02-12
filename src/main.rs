@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
-use proxly::{provision, run_proxy, run_proxy_debug};
+use proxly::{run_proxy, run_proxy_debug};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -18,9 +18,6 @@ enum Command {
 
     /// Run Proxly in proxy debug mode
     ProxyDebug,
-
-    /// Provision routing rules
-    Provision,
 }
 
 #[global_allocator]
@@ -36,16 +33,16 @@ async fn main() -> anyhow::Result<()> {
 
     match Cli::parse().command {
         Some(Command::Proxy) | None => {
-            info!("starting proxly proxy server");
+            info!(
+                "starting proxly proxy server, running as uid={}",
+                users::get_current_uid()
+            );
+
             run_proxy().await?;
         }
         Some(Command::ProxyDebug) => {
             info!("starting proxly proxy server (debug mode)");
             run_proxy_debug().await?;
-        }
-        Some(Command::Provision) => {
-            info!("running proxly provisioner");
-            provision().await?;
         }
     }
 

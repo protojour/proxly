@@ -8,11 +8,14 @@ dev-image:
 release-image:
     docker build . -t protojour/proxly:dev --platform linux/amd64 --build-arg RUST_PROFILE=release --build-arg CARGO_FLAGS=--release
 
+provisioner-image:
+    docker build provisioner -t protojour/proxly-provisioner:dev --platform linux/amd64
+
 testservice-image:
     cross build -p proxly-testservice --target x86_64-unknown-linux-musl --target-dir target-musl
     docker build . -t protojour/proxly-testservice:dev -f testservice.Dockerfile
 
-k8s-demo-deploy: dev-image testservice-image
+k8s-demo-deploy: dev-image provisioner-image testservice-image
     # idempotent preparation
     HELM_MAX_HISTORY=2 \
         helm upgrade --install openbao ./testfiles/k8s/charts/openbao-authly-dev-0.0.2.tgz \

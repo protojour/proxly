@@ -54,13 +54,20 @@ spec:
           - name: authly-certs
             mountPath: /etc/authly/certs
       initContainers:
-        - name: proxly-provision
-          image: protojour/proxly:dev
-          command: ["/proxly", "provision"]
+        - name: proxly-provisioner
+          image: protojour/proxly-provisioner:dev
           imagePullPolicy: Always
-          env:
-          - name: PROXLY_LOG
-            value: debug
+          securityContext:
+            # allowPrivilegeEscalation: false
+            privileged: true
+            capabilities:
+              add:
+              - NET_ADMIN
+              - NET_RAW
+              drop:
+              - ALL
+            runAsNonRoot: false
+            runAsUser: 0
         - name: proxly-proxy
           restartPolicy: Always
           image: protojour/proxly:dev
