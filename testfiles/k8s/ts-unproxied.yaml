@@ -1,0 +1,59 @@
+# testservice - unproxied
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: proxly-test
+  name: ts-unproxied
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: proxly-test
+  name: ts-unproxied
+spec:
+  selector:
+    app: ts-unproxied
+  ports:
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: proxly-test
+  name: ts-unproxied
+  labels:
+    app: ts-unproxied
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ts-unproxied
+  template:
+    metadata:
+      labels:
+        app: ts-unproxied
+        proxlyDev: restart
+    spec:
+      serviceAccountName: ts-unproxied
+      enableServiceLinks: false
+      containers:
+      - name: ts-unproxied
+        image: protojour/proxly-testservice:dev
+        command: ["/proxly-testservice", "unproxied"]
+        imagePullPolicy: Always
+        env:
+        - name: PROXLY_LOG
+          value: info
+        ports:
+        - containerPort: 443
+        volumeMounts:
+          - name: authly-certs
+            mountPath: /etc/authly/certs
+      volumes:
+        - name: authly-certs
+          configMap:
+            name: authly-certs.crt

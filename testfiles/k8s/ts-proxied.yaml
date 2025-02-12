@@ -1,0 +1,78 @@
+# testservice - proxied
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: proxly-test
+  name: ts-proxied
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: proxly-test
+  name: ts-proxied
+spec:
+  selector:
+    app: ts-proxied
+  ports:
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: proxly-test
+  name: ts-proxied
+  labels:
+    app: ts-proxied
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ts-proxied
+  template:
+    metadata:
+      labels:
+        app: ts-proxied
+        proxlyDev: restart
+    spec:
+      serviceAccountName: ts-proxied
+      enableServiceLinks: false
+      containers:
+      - name: ts-proxied
+        image: protojour/proxly-testservice:dev
+        command: ["/proxly-testservice", "proxied"]
+        imagePullPolicy: Always
+        env:
+        - name: PROXLY_LOG
+          value: info
+        ports:
+        - containerPort: 80
+        volumeMounts:
+          - name: authly-certs
+            mountPath: /etc/authly/certs
+      initContainers:
+        - name: proxly-provision
+          image: protojour/proxly:dev
+          command: ["/proxly", "provision"]
+          imagePullPolicy: Always
+          env:
+          - name: PROXLY_LOG
+            value: debug
+        - name: proxly-proxy
+          restartPolicy: Always
+          image: protojour/proxly:dev
+          command: ["/proxly", "proxy"]
+          imagePullPolicy: Always
+          env:
+          - name: PROXLY_LOG
+            value: debug
+          volumeMounts:
+          - name: authly-certs
+            mountPath: /etc/authly/certs
+      volumes:
+        - name: authly-certs
+          configMap:
+            name: authly-certs.crt

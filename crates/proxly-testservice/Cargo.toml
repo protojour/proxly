@@ -1,0 +1,30 @@
+[package]
+name = "proxly-testservice"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+authly-client = { workspace = true, features = ["reqwest_012", "rustls_023"] }
+authly-common = { workspace = true, features = ["mtls_server"] }
+axum = "0.7"
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+] }
+rustls = { version = "0.23", default-features = false }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "net",
+] }
+tokio-util = { version = "0.7" }
+tower-server = { version = "0.3", features = ["signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+] }

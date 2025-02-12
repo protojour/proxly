@@ -1,0 +1,5 @@
+.git
+.vscode
+target
+target-musl
+!target-musl/x86_64-unknown-linux-musl/debug/proxly-testservice
