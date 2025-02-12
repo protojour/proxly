@@ -5,15 +5,14 @@ use std::{
 };
 
 use anyhow::Context;
-use authly_common::mtls_server::MTLSMiddleware;
+use rustls::pki_types::ServerName;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
-use tokio_rustls::TlsAcceptor;
-use tower_server::tls::TlsConnectionMiddleware;
+use tokio_rustls::TlsConnector;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{ip_util::get_original_destination, state::ProxlyState};
 
-pub async fn ingress_proxy_tcp_listener_task(
+pub async fn egress_proxy_tcp_listener_task(
     listener: TcpListener,
     state: Arc<ProxlyState>,
 ) -> anyhow::Result<()> {
@@ -30,6 +29,21 @@ pub async fn ingress_proxy_tcp_listener_task(
             continue;
         };
 
+        let Ok(local_addr) = tcp_stream.local_addr() else {
+            continue;
+        };
+
+        // FIXME: this is probably not the way to detect V6 in this context
+        let is_v6 = matches!(remote_addr.ip(), IpAddr::V6(_));
+
+        let Ok(orig_dst) = get_original_destination(&tcp_stream.as_fd(), is_v6) else {
+            continue;
+        };
+
+        info!(
+            "egress connection from {remote_addr:?}, local={local_addr:?}, orig_dst={orig_dst:?}"
+        );
+
         tokio::spawn({
             let state = state.clone();
             async move {
@@ -37,7 +51,7 @@ pub async fn ingress_proxy_tcp_listener_task(
                     warn!(?err, "proxy_tcp error");
                 }
             }
-            .instrument(info_span!("ingress"))
+            .instrument(info_span!("egress"))
         });
     }
 }
@@ -62,37 +76,34 @@ async fn forward_tcp(
         addr
     };
 
+    let mut tls_wrap = false;
+
     // port rerouting
-    if dst_addr.port() == 443 {
-        dst_addr.set_port(80);
+    if dst_addr.port() == 80 {
+        dst_addr.set_port(443);
+        tls_wrap = true;
     }
 
     let mut dst_socket = TcpSocket::new_v4()?
         .connect(dst_addr)
         .await
-        .context("ingress: cannot open forwarding socket")?;
+        .context("cannot open forwarding socket")?;
 
-    match state.ingress_tls_config.as_ref() {
-        Some(tls_config) => {
-            let tls_acceptor = TlsAcceptor::from(tls_config.load_full());
-            let mut tls_stream = tls_acceptor
-                .accept(tcp_stream)
-                .await
-                .context("failed to perform tls handshake")?;
+    match state.egress_tls_config.as_ref() {
+        Some(tls_config) if tls_wrap => {
+            let tls_connector = TlsConnector::from(tls_config.load_full());
+            let mut tls_stream = tls_connector
+                .connect(
+                    // FIXME: figure out service domain name
+                    ServerName::DnsName("ts-unproxied".try_into().unwrap()),
+                    dst_socket,
+                )
+                .await?;
 
-            {
-                let peer_service_entity = MTLSMiddleware
-                    .data(tls_stream.get_ref().1)
-                    .and_then(|data| data.peer_service_entity())
-                    .context("no authly peer")?;
-
-                info!("got connection from {}", peer_service_entity);
-            }
-
-            tokio::io::copy_bidirectional(&mut tls_stream, &mut dst_socket).await?;
+            tokio::io::copy_bidirectional(&mut tcp_stream, &mut tls_stream).await?;
             Ok(())
         }
-        None => {
+        Some(_) | None => {
             tokio::io::copy_bidirectional(&mut tcp_stream, &mut dst_socket).await?;
             Ok(())
         }

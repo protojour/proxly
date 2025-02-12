@@ -75,7 +75,7 @@ spec:
           imagePullPolicy: Always
           env:
           - name: PROXLY_LOG
-            value: debug
+            value: info
           volumeMounts:
           - name: authly-certs
             mountPath: /etc/authly/certs

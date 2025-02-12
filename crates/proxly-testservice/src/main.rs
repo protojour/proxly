@@ -84,7 +84,10 @@ async fn spawn_unproxied(cancel: CancellationToken) -> anyhow::Result<()> {
         .with_tls_connection_middleware(authly_common::mtls_server::MTLSMiddleware)
         .with_tls_config(
             authly_client
-                .rustls_server_configurer("testservice unproxied!", vec!["unproxied".to_string()])
+                .rustls_server_configurer(
+                    "testservice unproxied!",
+                    vec!["ts-unproxied".to_string()],
+                )
                 .await?,
         )
         .bind()
