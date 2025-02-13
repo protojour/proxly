@@ -5,10 +5,10 @@ id = "fb91c237-4e3b-459f-be11-6ebb4b3d6770"
 eid = "s.566a175306314fc9800f17bda3eef2d7"
 label = "proxied"
 hosts = ["ts-proxied"]
-kubernetes-account = { name = "ts-proxied", namespace = "proxly-test" }
+kubernetes-account = { name = "ts-proxied" }
 
 [[service-entity]]
 eid = "s.3d64008016af420c9e8bb18839d1cd0c"
 label = "unproxied"
 hosts = ["ts-unproxied"]
-kubernetes-account = { name = "ts-unproxied", namespace = "proxly-test" }
+kubernetes-account = { name = "ts-unproxied" }

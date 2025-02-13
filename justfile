@@ -28,7 +28,7 @@ k8s-demo-deploy: dev-image provisioner-image testservice-image
         --dry-run=client | kubectl apply -f -
 
     HELM_MAX_HISTORY=2 \
-        helm upgrade --install authly ./testfiles/k8s/charts/authly-0.0.5.tgz \
+        helm upgrade --install authly ./testfiles/k8s/charts/authly-0.0.6.tgz \
         --namespace proxly-test \
         -f testfiles/k8s/authly-test-values.yaml
 
