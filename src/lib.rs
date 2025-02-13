@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use authly::{authly_tls_client_config, authly_tls_server_config};
-use state::ProxlyState;
+use state::{new_hickory, ProxlyState};
 use tokio::net::TcpListener;
 
 mod authly;
@@ -22,6 +22,7 @@ pub async fn run_proxy() -> anyhow::Result<()> {
         ingress_fixed_dst_addr: None,
         ingress_tls_config: Some(authly_tls_server_config(&authly_client, cancel.clone()).await?),
         egress_tls_config: Some(authly_tls_client_config(&authly_client, cancel.clone()).await?),
+        hickory: new_hickory()?,
         cancel: cancel.clone(),
     });
 
@@ -49,6 +50,7 @@ pub async fn run_proxy_debug() -> anyhow::Result<()> {
         ingress_fixed_dst_addr: Some("127.0.0.1:8088".parse()?),
         ingress_tls_config: None,
         egress_tls_config: None,
+        hickory: new_hickory()?,
         cancel: cancel.clone(),
     });
 

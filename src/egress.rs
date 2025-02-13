@@ -78,8 +78,15 @@ async fn forward_tcp(
 
     let mut tls_wrap = false;
 
-    // port rerouting
-    if dst_addr.port() == 80 {
+    let is_private = match dst_addr.ip() {
+        IpAddr::V4(v4) => v4.is_private(),
+        IpAddr::V6(_v6) => {
+            warn!("IPv6 detection not implemented");
+            false
+        }
+    };
+
+    if is_private && dst_addr.port() == 80 {
         dst_addr.set_port(443);
         tls_wrap = true;
     }
@@ -91,11 +98,21 @@ async fn forward_tcp(
 
     match state.egress_tls_config.as_ref() {
         Some(tls_config) if tls_wrap => {
+            let reverse_lookup = state.hickory.reverse_lookup(dst_addr.ip()).await?;
+            let dns_ptr = reverse_lookup.into_iter().next().context("no DNS name")?;
+            let mut dns_name = dns_ptr.to_ascii();
+
+            if dns_name.ends_with('.') {
+                dns_name.pop();
+            }
+
+            info!(?dns_name, ?dst_addr, "tls-wrapping connection");
+
             let tls_connector = TlsConnector::from(tls_config.load_full());
             let mut tls_stream = tls_connector
                 .connect(
                     // FIXME: figure out service domain name
-                    ServerName::DnsName("ts-unproxied".try_into().unwrap()),
+                    ServerName::DnsName(dns_name.try_into()?),
                     dst_socket,
                 )
                 .await?;

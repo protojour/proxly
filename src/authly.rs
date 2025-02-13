@@ -13,10 +13,7 @@ pub async fn authly_tls_server_config(
     authly_client: &authly_client::Client,
     cancel: CancellationToken,
 ) -> anyhow::Result<Arc<ArcSwap<ServerConfig>>> {
-    let mut cfg_stream = authly_client
-        // FIXME: figure out proper alternative names? hostname + ServiceId?
-        .rustls_server_configurer("service", vec!["ts-proxied".to_string()])
-        .await?;
+    let mut cfg_stream = authly_client.rustls_server_configurer("proxly").await?;
 
     let server_config = cfg_stream
         .next()

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use axum::routing::get;
+use axum::routing::post;
 use clap::{Parser, Subcommand};
 use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -60,7 +60,7 @@ async fn spawn_proxied(cancel: CancellationToken) -> anyhow::Result<()> {
 
     let http_client = reqwest::Client::new();
 
-    tokio::spawn(get_hello_loop(
+    tokio::spawn(post_hello_loop(
         http_client,
         "http://ts-unproxied/hello",
         cancel,
@@ -84,10 +84,7 @@ async fn spawn_unproxied(cancel: CancellationToken) -> anyhow::Result<()> {
         .with_tls_connection_middleware(authly_common::mtls_server::MTLSMiddleware)
         .with_tls_config(
             authly_client
-                .rustls_server_configurer(
-                    "testservice unproxied!",
-                    vec!["ts-unproxied".to_string()],
-                )
+                .rustls_server_configurer("testservice unproxied!")
                 .await?,
         )
         .bind()
@@ -100,7 +97,7 @@ async fn spawn_unproxied(cancel: CancellationToken) -> anyhow::Result<()> {
         .context("no HTTP client builder")?
         .build()?;
 
-    tokio::spawn(get_hello_loop(
+    tokio::spawn(post_hello_loop(
         http_client,
         "https://ts-proxied/hello",
         cancel,
@@ -114,29 +111,29 @@ async fn spawn_unproxied(cancel: CancellationToken) -> anyhow::Result<()> {
 fn hello_router() -> axum::Router {
     axum::Router::new().route(
         "/hello",
-        get(|| async move {
+        post(|| async move {
             info!("answering hello");
             "hello"
         }),
     )
 }
 
-async fn get_hello_loop(
+async fn post_hello_loop(
     http_client: reqwest::Client,
     url: &'static str,
     cancel: CancellationToken,
 ) {
-    async fn get_hello(http_client: &reqwest::Client, url: &str) -> anyhow::Result<()> {
-        info!("getting {url}");
-        let hello = http_client.get(url).send().await?.text().await?;
+    async fn post_hello(http_client: &reqwest::Client, url: &str) -> anyhow::Result<()> {
+        info!("posting {url}");
+        let hello = http_client.post(url).send().await?.text().await?;
         info!("got answer: `{hello}`");
 
         Ok(())
     }
 
     loop {
-        if let Err(err) = get_hello(&http_client, &url).await {
-            error!(?err, "GET {url}");
+        if let Err(err) = post_hello(&http_client, &url).await {
+            error!(?err, "POST {url}");
         }
 
         tokio::select! {

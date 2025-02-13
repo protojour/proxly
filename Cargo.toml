@@ -11,6 +11,7 @@ authly-common = { workspace = true, features = ["mtls_server"] }
 axum = "0.7"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
+hickory-resolver = "0.24"
 mimalloc = "0.1.43"
 nix = { version = "0.29", features = ["net", "socket"] }
 rustls = { version = "0.23", default-features = false }
