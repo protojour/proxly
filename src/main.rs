@@ -33,11 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
     match Cli::parse().command {
         Some(Command::Proxy) | None => {
-            info!(
-                "starting proxly proxy server, running as uid={}",
-                users::get_current_uid()
-            );
-
+            info!("starting proxly proxy server");
             run_proxy().await?;
         }
         Some(Command::ProxyDebug) => {
