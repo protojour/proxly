@@ -8,7 +8,7 @@ use anyhow::Context;
 use rustls::pki_types::ServerName;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio_rustls::TlsConnector;
-use tracing::{info, info_span, warn, Instrument};
+use tracing::{debug, info, warn, Instrument};
 
 use crate::{ip_util::get_original_destination, state::ProxlyState};
 
@@ -24,105 +24,114 @@ pub async fn egress_proxy_tcp_listener_task(
             }
         };
 
-        let Ok((tcp_stream, remote_addr)) = result else {
-            info!("couldn't get client, ignoring ingress connection");
+        let Ok((tcp_stream, peer_addr)) = result else {
+            warn!("couldn't get client, ignoring connection");
             continue;
         };
-
-        let Ok(local_addr) = tcp_stream.local_addr() else {
-            continue;
-        };
-
-        // FIXME: this is probably not the way to detect V6 in this context
-        let is_v6 = matches!(remote_addr.ip(), IpAddr::V6(_));
-
-        let Ok(orig_dst) = get_original_destination(&tcp_stream.as_fd(), is_v6) else {
-            continue;
-        };
-
-        info!(
-            "egress connection from {remote_addr:?}, local={local_addr:?}, orig_dst={orig_dst:?}"
-        );
 
         tokio::spawn({
             let state = state.clone();
             async move {
-                if let Err(err) = forward_tcp(tcp_stream, remote_addr, state).await {
+                if let Err(err) = forward_tcp(tcp_stream, peer_addr, state).await {
                     warn!(?err, "proxy_tcp error");
                 }
             }
-            .instrument(info_span!("egress"))
+            .in_current_span()
         });
     }
 }
 
 async fn forward_tcp(
     mut tcp_stream: TcpStream,
-    remote_addr: SocketAddr,
+    peer_addr: SocketAddr,
     state: Arc<ProxlyState>,
 ) -> anyhow::Result<()> {
-    info!(?remote_addr, "accepted");
+    debug!(?peer_addr, "accepted");
 
-    let mut dst_addr = if let Some(addr) = state.ingress_fixed_dst_addr {
-        addr
-    } else {
+    let mut dst_addr = {
         // FIXME: this is probably not the way to detect V6 in this context
-        let is_v6 = matches!(remote_addr.ip(), IpAddr::V6(_));
+        let is_v6 = matches!(peer_addr.ip(), IpAddr::V6(_));
 
-        let result = get_original_destination(&tcp_stream.as_fd(), is_v6);
-        tracing::info!(?result, "original destination");
-        let addr = result?;
-
-        addr
+        get_original_destination(&tcp_stream.as_fd(), is_v6).context("original destination")?
     };
 
-    let mut tls_wrap = false;
-
-    let is_private = match dst_addr.ip() {
-        IpAddr::V4(v4) => v4.is_private(),
-        IpAddr::V6(_v6) => {
-            warn!("IPv6 detection not implemented");
-            false
-        }
-    };
-
-    if is_private && dst_addr.port() == 80 {
-        dst_addr.set_port(443);
-        tls_wrap = true;
-    }
+    let apply_tls = analyze_destination(&mut dst_addr, &state).await;
 
     let mut dst_socket = TcpSocket::new_v4()?
         .connect(dst_addr)
         .await
         .context("cannot open forwarding socket")?;
 
-    match state.egress_tls_config.as_ref() {
-        Some(tls_config) if tls_wrap => {
-            let reverse_lookup = state.hickory.reverse_lookup(dst_addr.ip()).await?;
-            let dns_ptr = reverse_lookup.into_iter().next().context("no DNS name")?;
-            let mut dns_name = dns_ptr.to_ascii();
+    if let Some(ApplyAuthlyMTLS { server_name }) = apply_tls {
+        info!(
+            ?server_name,
+            ?dst_addr,
+            ?peer_addr,
+            "TLS-wrapping connection"
+        );
 
-            if dns_name.ends_with('.') {
-                dns_name.pop();
-            }
+        let mut tls_stream = TlsConnector::from(state.egress_tls_config.load_full())
+            .connect(server_name, dst_socket)
+            .await?;
 
-            info!(?dns_name, ?dst_addr, "tls-wrapping connection");
-
-            let tls_connector = TlsConnector::from(tls_config.load_full());
-            let mut tls_stream = tls_connector
-                .connect(
-                    // FIXME: figure out service domain name
-                    ServerName::DnsName(dns_name.try_into()?),
-                    dst_socket,
-                )
-                .await?;
-
-            tokio::io::copy_bidirectional(&mut tcp_stream, &mut tls_stream).await?;
-            Ok(())
-        }
-        Some(_) | None => {
-            tokio::io::copy_bidirectional(&mut tcp_stream, &mut dst_socket).await?;
-            Ok(())
-        }
+        tokio::io::copy_bidirectional(&mut tcp_stream, &mut tls_stream).await?;
+    } else {
+        tokio::io::copy_bidirectional(&mut tcp_stream, &mut dst_socket).await?;
     }
+
+    Ok(())
+}
+
+struct ApplyAuthlyMTLS {
+    server_name: ServerName<'static>,
+}
+
+async fn analyze_destination(
+    dst_addr: &mut SocketAddr,
+    state: &ProxlyState,
+) -> Option<ApplyAuthlyMTLS> {
+    let mut should_tls_wrap = false;
+
+    let is_private = match dst_addr.ip() {
+        IpAddr::V4(v4) => v4.is_private(),
+        IpAddr::V6(_v6) => {
+            warn!("IPv6 private range detection not implemented");
+            false
+        }
+    };
+
+    // for now, only apply mTLS-wrapping if the address is private (cluster-local)
+    // and the outbound port is 80, i.e. insecure HTTP
+    if is_private && dst_addr.port() == 80 {
+        // change the port to 443 to talk "proper" https
+        dst_addr.set_port(443);
+        should_tls_wrap = true;
+    }
+
+    if should_tls_wrap {
+        match find_tls_server_name(dst_addr.ip(), &state).await {
+            Ok(server_name) => Some(ApplyAuthlyMTLS { server_name }),
+            Err(err) => {
+                warn!(?err, "failed to find tls server name");
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
+async fn find_tls_server_name(
+    addr: IpAddr,
+    state: &ProxlyState,
+) -> anyhow::Result<ServerName<'static>> {
+    let reverse_lookup = state.hickory.reverse_lookup(addr).await?;
+    let dns_ptr = reverse_lookup.into_iter().next().context("no DNS name")?;
+    let mut dns_name = dns_ptr.to_ascii();
+
+    if dns_name.ends_with('.') {
+        dns_name.pop();
+    }
+
+    Ok(ServerName::DnsName(dns_name.try_into()?))
 }
