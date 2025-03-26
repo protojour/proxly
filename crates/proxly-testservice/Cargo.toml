@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1"
 authly-client = { workspace = true, features = ["reqwest_012", "rustls_023"] }
 authly-common = { workspace = true, features = ["mtls_server"] }
-axum = "0.7"
+axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = [
